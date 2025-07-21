@@ -14,7 +14,7 @@ namespace feetech {
         REGWRITE_DATA = 0x04,  //异步写入
         ACTION = 0x05,         //执行
         REBOOT = 0x08,         //重启
-        RESET = 0x0A,          //postion reset
+        RESET = 0x0B,          //postion reset
         SYCNREAD_DATA = 0x82,  //同步读取
         SYCNWRITE_DATA = 0x83  //同步写入
     };

@@ -6,12 +6,19 @@ namespace feetech {
 
 class HLS : public Servo {
 public:
+    enum class Mode {
+        POSITION = 0x00,
+        SPEED = 0x01,
+        CURRENT = 0x02,
+        PWM = 0x03,
+    };
+
     serial::Serial *serial;
 
     HLS(uint8_t id,int16_t max_pos,int16_t min_pos,int16_t speed,int16_t acc,serial::Serial *serial);
     ~HLS();
 
-    void write(uint8_t id,uint8_t length,std::vector<uint8_t> data);
+    void write(uint8_t id,std::vector<uint8_t> data);
     bool read();
 
     bool ping() override;
@@ -26,6 +33,12 @@ public:
     Packet deserialize(std::vector<uint8_t> data) const;
     uint8_t getID() {return id;};
 
+    void setMode(Mode mode);
+    uint8_t getMode();
+    void setSpeed(int16_t speed);
+    int16_t getSpeed();
+    void disable();
+
 private:
     int16_t scs_tohost(int16_t pos,int n)
     {
@@ -36,5 +49,7 @@ private:
     }
     mutable Packet receive_packet;
     int16_t torque = 200;
+    int16_t max_speed = 150;
+    int16_t min_speed = -150;
 };
 }

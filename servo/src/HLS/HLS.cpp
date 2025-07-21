@@ -3,7 +3,7 @@
 #include <thread>
 #include <chrono>
 
-#define DEBUG 0
+#define DEBUG 1
 
 namespace feetech {
 
@@ -72,7 +72,7 @@ uint8_t HLS::getCheckSum(Packet packet) const {
             checksum_ += packet.data[i];
         }
     }
-    checksum_ = ~checksum_ & 0xFF;
+    checksum_ = (~checksum_) & 0xFF;
     packet.checksum = checksum_;
     if(DEBUG) {
         std::cout << "Checksum is " << (int)packet.checksum << std::endl;
@@ -81,14 +81,14 @@ uint8_t HLS::getCheckSum(Packet packet) const {
 }
 
 
-void HLS::write(uint8_t id,uint8_t length,std::vector<uint8_t> data_) {
+void HLS::write(uint8_t id,std::vector<uint8_t> data_) {
     Packet packet_;
     packet_.header1 = PROTOCOL_HEADER1;
     packet_.header2 = PROTOCOL_HEADER2;
     packet_.id = id;
-    packet_.length = length + 2;
     packet_.command = static_cast<uint8_t>(feetech::Command::REGWRITE_DATA);
     packet_.data = data_;
+    packet_.length = packet_.data.size() + 2;
     packet_.checksum = getCheckSum(packet_);
 
     if(DEBUG) {
@@ -138,17 +138,31 @@ bool HLS::read() {
     return true;
 }
 
+void HLS::disable() {
+    std::cout << "Disabling" << std::endl;
+    std::vector<uint8_t> data_;
+    data_.push_back(0x32);
+    data_.push_back(0x00);
+    data_.push_back(0x00);
+    data_.push_back(0x00);
+
+    if(serial->isOpen()) {
+        write(id,data_);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+}
+
 void HLS::setId(uint8_t id_) {
     // 掉电保存
     Packet packet_;
     packet_.header1 = PROTOCOL_HEADER1;
     packet_.header2 = PROTOCOL_HEADER2;
     packet_.id = id;
-    packet_.length = 0x04;
     packet_.command = static_cast<uint8_t>(feetech::Command::WRITE);
     packet_.data.push_back(0x37);
     packet_.data.push_back(0x00);
     packet_.checksum = getCheckSum(packet_);
+    packet_.length = packet_.data.size() + 2;
     
     std::vector<uint8_t> data = serialize(packet_);
 
@@ -167,6 +181,102 @@ void HLS::setId(uint8_t id_) {
         serial->write(data);
     }
 
+}
+
+void HLS::setMode(Mode mode) {
+    // 掉电保存
+    Packet packet_;
+    packet_.header1 = PROTOCOL_HEADER1;
+    packet_.header2 = PROTOCOL_HEADER2;
+    packet_.id = id;
+    packet_.command = static_cast<uint8_t>(feetech::Command::WRITE);
+    packet_.data.push_back(0x37);
+    packet_.data.push_back(0x00);
+    packet_.length = packet_.data.size() + 2;
+    packet_.checksum = getCheckSum(packet_);
+    
+    std::vector<uint8_t> data = serialize(packet_);
+
+    if(DEBUG) {
+        std::cout << "Sending data: ";
+        for(auto byte : data) {
+            printf("%02X ", byte);
+        }
+        std::cout << std::endl;
+    }
+    if(serial->isOpen()) {
+        serial->write(data);
+    }
+
+    if(!read())
+    {
+        std::cout << "Sending data failed!"<< std::endl;
+    }
+
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    packet_.data.clear();
+
+    packet_.data.push_back(0x21);
+    packet_.data.push_back(static_cast<uint8_t>(mode));
+    packet_.checksum = getCheckSum(packet_);
+    data = serialize(packet_);
+
+    if(serial->isOpen()) {
+        serial->write(data);
+    }
+
+    if(!read())
+    {
+        std::cout << "Set mode failed!"<< std::endl;
+    }
+
+    std::cout << "Set mode successfully!"<< std::endl;
+
+}
+
+uint8_t HLS::getMode() {
+    Packet packet_;
+    packet_.header1 = PROTOCOL_HEADER1;
+    packet_.header2 = PROTOCOL_HEADER2;
+    packet_.id = id;
+    packet_.command = static_cast<uint8_t>(feetech::Command::READ);
+    packet_.data.push_back(0x21);
+    packet_.data.push_back(0x01);
+    packet_.length = packet_.data.size() + 2;
+    packet_.checksum = getCheckSum(packet_);
+
+    std::vector<uint8_t> data = serialize(packet_);
+
+    if(DEBUG) {
+        std::cout << "Sending data: ";
+        for(auto byte : data) {
+            printf("%02X ", byte);
+        }
+        std::cout << std::endl;
+    }
+
+    if(serial->isOpen()) {
+        serial->write(data);
+    }
+
+    //std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    if(!read()) {
+        std::cout << "Get mode failed" << std::endl;
+        return static_cast<uint8_t>(feetech::HLS::Mode::CURRENT);
+    }
+
+    std::cout << "data size: " << receive_packet.data.size() << std::endl;
+    if (!receive_packet.data.empty()) {
+        std::cout << receive_packet.data[0] << "data" << std::endl;
+        std::cout << "Mode is " << static_cast<int>(receive_packet.data[0]) << std::endl;
+        return static_cast<int>(receive_packet.data[0]);
+    } else {
+        std::cout << "No data received!" << std::endl;
+        return 0;
+    }
+    
 }
 
 bool HLS::ping() {
@@ -204,6 +314,40 @@ bool HLS::ping() {
     return true;
 }
 
+void HLS::setSpeed(int16_t speed) {
+    // if (speed > max_speed) {
+    //     speed = max_speed;
+    // }
+    // if (speed < min_speed) {
+    //     speed = min_speed;
+    // }
+    this->speed = speed;
+
+    Packet packet_;
+    std::vector<uint8_t> data_;
+    data_.push_back(0x29);
+    data_.push_back(this->acc);
+    data_.push_back(00);
+    data_.push_back(00);
+    data_.push_back(this->torque & 0xFF);
+    data_.push_back(this->torque >> 8 & 0xFF);
+    data_.push_back(this->speed & 0xFF);
+    data_.push_back(this->speed >> 8 & 0xFF);
+
+    if(serial->isOpen()) {
+        write(id,data_);
+    }
+    
+    if(!read()) {
+        std::cout << "Set speed failed" << std::endl;
+        return;
+    }
+
+    if(DEBUG) {
+        std::cout << "Set speed successful" << std::endl;
+    }
+}
+
 void HLS::setPos(int16_t pos) {
     if (pos > max_pos) {
         pos = max_pos;
@@ -226,8 +370,9 @@ void HLS::setPos(int16_t pos) {
     data_.push_back(this->torque >> 8 & 0xFF);
     data_.push_back(this->speed & 0xFF);
     data_.push_back(this->speed >> 8 & 0xFF);
+
     if(serial->isOpen()) {
-        write(id,data_.size(),data_);
+        write(id,data_);
     }
     // std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
@@ -247,31 +392,97 @@ void HLS::setOffset(uint16_t offset) {
     packet_.header1 = PROTOCOL_HEADER1;
     packet_.header2 = PROTOCOL_HEADER2;
     packet_.id = id;
-    packet_.length = 4;
     packet_.command = static_cast<uint8_t>(feetech::Command::RESET);
     packet_.data.push_back(offset & 0xFF);
     packet_.data.push_back(offset >> 8);
+    packet_.length = packet_.data.size() + 2;
     packet_.checksum = getCheckSum(packet_);
-    if(serial->isOpen()) {
-        serial->write(serialize(packet_));
+
+    std::vector<uint8_t> data = serialize(packet_);
+
+    if(DEBUG) {
+        std::cout << "Sending data: ";
+        for(auto byte : data) {
+            printf("%02X ", byte);
+        }
+        std::cout << std::endl;
     }
+
+    if(serial->isOpen()) {
+        serial->write(data);
+    }
+
+    if(!read()) {
+        std::cout << "Set offset failed" << std::endl;
+        return;
+    }
+
 }
 
-int16_t HLS::getPos() {
+int16_t HLS::getSpeed(){
+    std::cout << "Getting Speed" << std::endl;
     Packet packet_;
     packet_.header1 = PROTOCOL_HEADER1;
     packet_.header2 = PROTOCOL_HEADER2;
     packet_.id = id;
-    packet_.length = 0x04;
+    packet_.command = static_cast<uint8_t>(feetech::Command::READ);
+    packet_.data.push_back(0x3A);
+    packet_.data.push_back(0x02);
+    packet_.length = packet_.data.size() + 2;
+    packet_.checksum = getCheckSum(packet_);
+
+    std::vector<uint8_t> data = serialize(packet_);
+
+    if(DEBUG) {
+        std::cout << "Sending data: ";
+        for(auto byte : data) {
+            printf("%02X ", byte);
+        }
+        std::cout << std::endl;
+    }
+
+    if(serial->isOpen()) {
+        serial->write(data);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+    if (!read()) {
+        std::cout << "Failed to read position" << std::endl;
+        return 0;
+    }
+    int16_t speed_ = receive_packet.data[0] | (receive_packet.data[1] << 8);
+    receive_packet.data.clear();
+    // pos = scs_tohost(pos,15);
+    std::cout << "Speed is " << speed << std::endl;
+    return speed_;
+}
+
+int16_t HLS::getPos() {
+    std::cout << "Getting position" << std::endl;
+    Packet packet_;
+    packet_.header1 = PROTOCOL_HEADER1;
+    packet_.header2 = PROTOCOL_HEADER2;
+    packet_.id = id;
     packet_.command = static_cast<uint8_t>(feetech::Command::READ);
     packet_.data.push_back(0x38);
     packet_.data.push_back(0x02);
+    packet_.length = packet_.data.size() + 2;
     packet_.checksum = getCheckSum(packet_);
-    
-    if(serial->isOpen()) {
-        serial->write(serialize(packet_));
+
+    std::vector<uint8_t> data = serialize(packet_);
+
+    if(DEBUG) {
+        std::cout << "Sending data: ";
+        for(auto byte : data) {
+            printf("%02X ", byte);
+        }
+        std::cout << std::endl;
     }
-    // std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    if(serial->isOpen()) {
+        serial->write(data);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     if (!read()) {
         std::cout << "Failed to read position" << std::endl;
