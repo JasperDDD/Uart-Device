@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>serial_driver</name>
+  <version>0.1.0</version>
+  <description>A serial communication library for ROS with custom data frame format support</description>
+
+  <maintainer email="user@example.com">Your Name</maintainer>
+  <license>BSD</license>
+
+  <url type="website">http://wiki.ros.org/serial_driver</url>
+  <url type="bugtracker">https://github.com/your-repo/serial_driver/issues</url>
+  <url type="repository">https://github.com/your-repo/serial_driver</url>
+
+  <author email="user@example.com">Your Name</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>roscpp</build_depend>
+  <build_depend>rospy</build_depend>
+  <build_depend>serial</build_depend>
+  <build_depend>std_msgs</build_depend>
+
+  <build_export_depend>roscpp</build_export_depend>
+  <build_export_depend>rospy</build_export_depend>
+  <build_export_depend>serial</build_export_depend>
+  <build_export_depend>std_msgs</build_export_depend>
+
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>serial</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <export>
+  </export>
+</package> 

@@ -1,0 +1,11 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/jasper/Desktop/ChanDog/build/cmake_install.cmake",
+		"/home/jasper/Desktop/ChanDog/build/gtest/cmake_install.cmake",
+		"/home/jasper/Desktop/ChanDog/build/gtest/googlemock/cmake_install.cmake",
+		"/home/jasper/Desktop/ChanDog/build/gtest/googletest/cmake_install.cmake",
+		"/home/jasper/Desktop/ChanDog/build/serial_driver/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

@@ -1,0 +1,8 @@
+prefix=/home/jasper/Desktop/ChanDog/devel
+
+Name: serial_driver
+Description: Description of serial_driver
+Version: 0.1.0
+Cflags: -I/home/jasper/Desktop/ChanDog/src/serial_driver/include
+Libs: -L${prefix}/lib 
+Requires: roscpp rospy serial std_msgs

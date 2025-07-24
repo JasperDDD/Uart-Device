@@ -1,4 +1,5 @@
 #include "feetech/HLS.hpp"
+#include <cstdint>
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -7,7 +8,8 @@
 
 namespace feetech {
 
-HLS::HLS(uint8_t id,int16_t max_pos,int16_t min_pos,int16_t speed,int16_t acc,serial::Serial *serial) : 
+#if ROS_VERSION == 1
+HLS::HLS(uint8_t id,int16_t max_pos,int16_t min_pos,int16_t speed,int16_t acc,int16_t torque, serial::Serial *serial) : 
 Servo(id),serial(serial) 
 {
     this->id = id;
@@ -15,9 +17,9 @@ Servo(id),serial(serial)
     this->min_pos = min_pos;
     this->speed = speed;
     this->acc = acc;
-    
+    this->torque = torque;
     try {
-        if (serial->isOpen()) {
+        if (serial->port()->is_open()) {
             std::cout << "Serial port opened successfully" << std::endl;
         } else {
             std::cout << "Failed to open serial port" << std::endl;
@@ -26,6 +28,29 @@ Servo(id),serial(serial)
         std::cerr << "Unable to open port: " << e.what() << std::endl;
     }
 }
+#elif ROS_VERSION == 2
+HLS::HLS(uint8_t id,int16_t max_pos,int16_t min_pos,int16_t speed,int16_t acc,int16_t torque, drivers::serial_driver::SerialDriver *serial) :
+Servo(id),serial(serial)
+{
+    this->id = id;
+    this->max_pos = max_pos;
+    this->min_pos = min_pos;
+    this->speed = speed;
+    this->acc = acc;
+        this->torque = torque;
+    
+    try {
+        if (serial && serial->port()->is_open()) {  // 检查指针有效性
+            std::cout << "Serial port opened successfully" << std::endl;
+        } else {
+            throw std::runtime_error("Serial port not open or invalid driver");
+        }
+    } catch (const std::exception &e) {  // 捕获所有异常类型
+        std::cerr << "Initialization failed: " << e.what() << std::endl;
+        throw;  // 重新抛出异常（可选）
+    }
+}
+#endif
 
 HLS::~HLS() {}
 
@@ -91,20 +116,21 @@ void HLS::write(uint8_t id,std::vector<uint8_t> data_) {
     packet_.length = packet_.data.size() + 2;
     packet_.checksum = getCheckSum(packet_);
 
-    if(DEBUG) {
-    std::cout << "Sending data: ";
-    for(auto byte : serialize(packet_)) {
-        printf("%02X ", byte);
-    }
-    std::cout << std::endl;
-    }
+    std::vector<uint8_t> data = serialize(packet_);
 
+#if ROS_VERSION == 1
     if(serial->isOpen()) {
-        serial->write(serialize(packet_));
+        serial->write(data);
     }
+#elif ROS_VERSION == 2
+    if(serial->port()->is_open()) {
+        serial->port()->send(data);
+    }
+#endif
 }
 
-bool HLS::read() {
+bool HLS::read() {   
+#if ROS_VERSION == 1
     size_t timeout_ms = 50;
     size_t elapsed = 0;
     std::vector<uint8_t> data_;
@@ -135,6 +161,28 @@ bool HLS::read() {
         std::cout << "Error is " << (int)receive_packet.command << std::endl;
         return false;
     }
+#elif ROS_VERSION == 2
+    std::vector<uint8_t> data_(18);
+    size_t bytes_read = serial->port()->receive(data_);
+    
+    if (bytes_read > 0) {
+        if(DEBUG) {
+        std::cout << "Received data: ";
+    for (size_t i = 0; i < bytes_read; ++i) {
+                printf("%02X ", data_[i]);
+        }
+        std::cout << std::endl;
+        }
+        receive_packet = deserialize(data_);
+        if (receive_packet.header1 != PROTOCOL_HEADER1 || receive_packet.header2 != PROTOCOL_HEADER2) {
+            std::cout << "Error is " << (int)receive_packet.command << std::endl;
+            return false;
+        }
+    } else {
+        std::cout << "No data received or timeout" << std::endl;
+        return false;
+    }
+#endif
     return true;
 }
 
@@ -146,9 +194,15 @@ void HLS::disable() {
     data_.push_back(0x00);
     data_.push_back(0x00);
 
+#if ROS_VERSION == 1
     if(serial->isOpen()) {
-        write(id,data_);
+        serial->write(data_);
     }
+#elif ROS_VERSION == 2
+    if(serial->port()->is_open()) {
+        serial->port()->send(data_);
+    }
+#endif
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 }
 
@@ -165,10 +219,16 @@ void HLS::setId(uint8_t id_) {
     packet_.length = packet_.data.size() + 2;
     
     std::vector<uint8_t> data = serialize(packet_);
-
+#if ROS_VERSION == 1
     if(serial->isOpen()) {
         serial->write(data);
     }
+#elif ROS_VERSION == 2
+
+    if(serial->port()->is_open()) {
+        serial->port()->send(data);
+    }
+#endif
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
     packet_.data.clear();
 
@@ -177,54 +237,78 @@ void HLS::setId(uint8_t id_) {
     packet_.checksum = getCheckSum(packet_);
     data = serialize(packet_);
 
+#if ROS_VERSION == 1
     if(serial->isOpen()) {
         serial->write(data);
     }
+#elif ROS_VERSION == 2
+
+    if(serial->port()->is_open()) {
+        serial->port()->send(data);
+    }
+#endif
 
 }
 
-void HLS::setMode(Mode mode) {
-    // 掉电保存
+void HLS::setMode(bool isStore, Mode mode) {
+
     Packet packet_;
     packet_.header1 = PROTOCOL_HEADER1;
     packet_.header2 = PROTOCOL_HEADER2;
     packet_.id = id;
     packet_.command = static_cast<uint8_t>(feetech::Command::WRITE);
-    packet_.data.push_back(0x37);
-    packet_.data.push_back(0x00);
-    packet_.length = packet_.data.size() + 2;
-    packet_.checksum = getCheckSum(packet_);
-    
-    std::vector<uint8_t> data = serialize(packet_);
 
-    if(DEBUG) {
-        std::cout << "Sending data: ";
-        for(auto byte : data) {
-            printf("%02X ", byte);
-        }
-        std::cout << std::endl;
-    }
-    if(serial->isOpen()) {
-        serial->write(data);
-    }
-
-    if(!read())
+    std::vector<uint8_t> data ;
+    if(isStore)
     {
-        std::cout << "Sending data failed!"<< std::endl;
+        // 掉电保存
+        packet_.data.push_back(0x37);
+        packet_.data.push_back(0x00);
+        packet_.length = packet_.data.size() + 2;
+        packet_.checksum = getCheckSum(packet_);
+        
+        data = serialize(packet_);
+
+        if(DEBUG) {
+            std::cout << "Sending data: ";
+            for(auto byte : data) {
+                printf("%02X ", byte);
+            }
+            std::cout << std::endl;
+        }
+
+#if ROS_VERSION == 1
+        if(serial->isOpen()) {
+            serial->write(data);
+        }
+#elif ROS_VERSION == 2
+        if(serial->port()->is_open()) {
+            serial->port()->send(data);
+        }
+#endif
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if(!read())
+        {
+            std::cout << "Sending data failed!"<< std::endl;
+        }
+        packet_.data.clear();
     }
-
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    packet_.data.clear();
 
     packet_.data.push_back(0x21);
     packet_.data.push_back(static_cast<uint8_t>(mode));
     packet_.checksum = getCheckSum(packet_);
+    
     data = serialize(packet_);
 
+#if ROS_VERSION == 1
     if(serial->isOpen()) {
         serial->write(data);
     }
+#elif ROS_VERSION == 2
+    if(serial->port()->is_open()) {
+        serial->port()->send(data);
+    }
+#endif
 
     if(!read())
     {
@@ -232,7 +316,6 @@ void HLS::setMode(Mode mode) {
     }
 
     std::cout << "Set mode successfully!"<< std::endl;
-
 }
 
 uint8_t HLS::getMode() {
@@ -256,9 +339,16 @@ uint8_t HLS::getMode() {
         std::cout << std::endl;
     }
 
+#if ROS_VERSION == 1
     if(serial->isOpen()) {
         serial->write(data);
     }
+#elif ROS_VERSION == 2
+
+    if(serial->port()->is_open()) {
+        serial->port()->send(data);
+    }
+#endif
 
     //std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
@@ -290,7 +380,8 @@ bool HLS::ping() {
     
     std::cout << "Sending ping to servo ID: " << (int)id << std::endl;
     
-    if(serial->isOpen()) {
+#if ROS_VERSION == 1
+    if(serial->port()->isOpen()) {
         std::vector<uint8_t> data = serialize(packet_);
         if(DEBUG) {
             std::cout << "Sending data: ";
@@ -304,6 +395,22 @@ bool HLS::ping() {
         std::cout << "Serial port is not open!" << std::endl;
         return false;
     }
+#elif ROS_VERSION == 2
+    if(serial->port()->is_open()) {
+        std::vector<uint8_t> data = serialize(packet_);
+        if(DEBUG) {
+            std::cout << "Sending data: ";
+            for(auto byte : data) {
+                printf("%02X ", byte);
+            }
+            std::cout << std::endl;
+        }
+        serial->port()->send(data);
+    } else {
+        std::cout << "Serial port is not open!" << std::endl;
+        return false;
+    }
+#endif
 
     if (!read()) {
         std::cout << "Ping failed - no response from servo" << std::endl;
@@ -321,7 +428,7 @@ void HLS::setSpeed(int16_t speed) {
     // if (speed < min_speed) {
     //     speed = min_speed;
     // }
-    this->speed = speed;
+    this->speed = abs(speed);
 
     Packet packet_;
     std::vector<uint8_t> data_;
@@ -333,10 +440,23 @@ void HLS::setSpeed(int16_t speed) {
     data_.push_back(this->torque >> 8 & 0xFF);
     data_.push_back(this->speed & 0xFF);
     data_.push_back(this->speed >> 8 & 0xFF);
-
-    if(serial->isOpen()) {
-        write(id,data_);
+    if(speed < 0) {
+        data_.back() |= 0x80; // 设置最高位为1表示负速度
     }
+
+    std::cout << "Sending data: ";
+    for(auto byte : data_) {
+        printf("%02X ", byte);
+    }
+#if ROS_VERSION == 1
+    if(serial->isOpen()) {
+        write(id, data_);
+    }
+#elif ROS_VERSION == 2
+    if(serial->port()->is_open()) {
+        write(id, data_);
+    }
+#endif
     
     if(!read()) {
         std::cout << "Set speed failed" << std::endl;
@@ -371,9 +491,15 @@ void HLS::setPos(int16_t pos) {
     data_.push_back(this->speed & 0xFF);
     data_.push_back(this->speed >> 8 & 0xFF);
 
+#if ROS_VERSION == 1
     if(serial->isOpen()) {
-        write(id,data_);
+        write(id, data_);
     }
+#elif ROS_VERSION == 2
+    if(serial->port()->is_open()) {
+        write(id, data_);
+    }
+#endif
     // std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
     if(!read()) {
@@ -398,19 +524,25 @@ void HLS::setOffset(uint16_t offset) {
     packet_.length = packet_.data.size() + 2;
     packet_.checksum = getCheckSum(packet_);
 
-    std::vector<uint8_t> data = serialize(packet_);
+    std::vector<uint8_t> data_ = serialize(packet_);
 
     if(DEBUG) {
         std::cout << "Sending data: ";
-        for(auto byte : data) {
+        for(auto byte : data_) {
             printf("%02X ", byte);
         }
         std::cout << std::endl;
     }
 
+#if ROS_VERSION == 1
     if(serial->isOpen()) {
-        serial->write(data);
+        serial->write(data_);
     }
+#elif ROS_VERSION == 2
+    if(serial->port()->is_open()) {
+        serial->port()->send(data_);
+    }
+#endif
 
     if(!read()) {
         std::cout << "Set offset failed" << std::endl;
@@ -431,19 +563,25 @@ int16_t HLS::getSpeed(){
     packet_.length = packet_.data.size() + 2;
     packet_.checksum = getCheckSum(packet_);
 
-    std::vector<uint8_t> data = serialize(packet_);
+    std::vector<uint8_t> data_ = serialize(packet_);
 
     if(DEBUG) {
         std::cout << "Sending data: ";
-        for(auto byte : data) {
+        for(auto byte : data_) {
             printf("%02X ", byte);
         }
         std::cout << std::endl;
     }
 
+#if ROS_VERSION == 1
     if(serial->isOpen()) {
-        serial->write(data);
+        serial->write(data_);
     }
+#elif ROS_VERSION == 2
+    if(serial->port()->is_open()) {
+        serial->port()->send(data_);
+    }
+#endif
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     if (!read()) {
@@ -469,19 +607,26 @@ int16_t HLS::getPos() {
     packet_.length = packet_.data.size() + 2;
     packet_.checksum = getCheckSum(packet_);
 
-    std::vector<uint8_t> data = serialize(packet_);
+    std::vector<uint8_t> data_ = serialize(packet_);
 
     if(DEBUG) {
         std::cout << "Sending data: ";
-        for(auto byte : data) {
+        for(auto byte : data_) {
             printf("%02X ", byte);
         }
         std::cout << std::endl;
     }
 
+#if ROS_VERSION == 1
     if(serial->isOpen()) {
-        serial->write(data);
+        serial->write(data_);
     }
+#elif ROS_VERSION == 2
+    if(serial->port()->is_open()) {
+        serial->port()->send(data_);
+    }
+#endif
+
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     if (!read()) {
@@ -510,9 +655,15 @@ void HLS::action() {
         }
     std::cout << std::endl;
     }
+#if ROS_VERSION == 1
     if(serial->isOpen()) {
         serial->write(serialize(packet_));
     }
+#elif ROS_VERSION == 2
+    if(serial->port()->is_open()) {
+        serial->port()->send(serialize(packet_));
+    }
+#endif
     // std::this_thread::sleep_for(std::chrono::milliseconds(1));
 }
 

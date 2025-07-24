@@ -1,6 +1,10 @@
 #include "feetech.hpp"
-#include  <serial/serial.h>
-
+#include <string>
+#if ROS_VERSION == 1
+    #include  <serial/serial.h>
+#elif ROS_VERSION == 2
+    #include "serial_driver/serial_driver.hpp"
+#endif
 
 namespace feetech {
 
@@ -13,9 +17,13 @@ public:
         PWM = 0x03,
     };
 
+#if ROS_VERSION == 1
     serial::Serial *serial;
-
     HLS(uint8_t id,int16_t max_pos,int16_t min_pos,int16_t speed,int16_t acc,serial::Serial *serial);
+#elif ROS_VERSION == 2
+    drivers::serial_driver::SerialDriver *serial;
+    HLS(uint8_t id,int16_t max_pos,int16_t min_pos,int16_t speed,int16_t acc,int16_t torque, drivers::serial_driver::SerialDriver *serial);
+#endif
     ~HLS();
 
     void write(uint8_t id,std::vector<uint8_t> data);
@@ -33,7 +41,7 @@ public:
     Packet deserialize(std::vector<uint8_t> data) const;
     uint8_t getID() {return id;};
 
-    void setMode(Mode mode);
+    void setMode(bool isStore, Mode mode);
     uint8_t getMode();
     void setSpeed(int16_t speed);
     int16_t getSpeed();
@@ -51,5 +59,7 @@ private:
     int16_t torque = 200;
     int16_t max_speed = 150;
     int16_t min_speed = -150;
+
+    std::string servo_name;
 };
 }

@@ -1,0 +1,14 @@
+[
+{
+  "directory": "/home/jasper/Desktop/ChanDog/servo/build",
+  "command": "/usr/bin/c++ -DROS_VERSION=2 -I/home/jasper/Desktop/ChanDog/servo/include -I/opt/ros/humble/include -std=gnu++14 -o CMakeFiles/hls_test.dir/src/HLS/test.cpp.o -c /home/jasper/Desktop/ChanDog/servo/src/HLS/test.cpp",
+  "file": "/home/jasper/Desktop/ChanDog/servo/src/HLS/test.cpp",
+  "output": "CMakeFiles/hls_test.dir/src/HLS/test.cpp.o"
+},
+{
+  "directory": "/home/jasper/Desktop/ChanDog/servo/build",
+  "command": "/usr/bin/c++ -DROS_VERSION=2 -I/home/jasper/Desktop/ChanDog/servo/include -I/opt/ros/humble/include -std=gnu++14 -o CMakeFiles/hls_test.dir/src/HLS/HLS.cpp.o -c /home/jasper/Desktop/ChanDog/servo/src/HLS/HLS.cpp",
+  "file": "/home/jasper/Desktop/ChanDog/servo/src/HLS/HLS.cpp",
+  "output": "CMakeFiles/hls_test.dir/src/HLS/HLS.cpp.o"
+}
+]
